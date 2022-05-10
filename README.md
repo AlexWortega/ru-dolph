@@ -32,7 +32,7 @@ to visual question answering and more. This model demonstrates the power of Hype
 
 # Installing
 ```
-pip install rudolph==0.0.1rc1
+pip install rudolph==0.0.1rc8
 ```
 
 # Usage
@@ -56,57 +56,59 @@ model.to(device);
 tokenizer = get_tokenizer()
 vae = get_vae(dwt=False).to(device)
 ```
+
+### Setup for Fast Image Generation
+
+```python
+text = 'старинный будильник многоугольной формы'
+bs, images_num = 48, 48
+top_k, top_p = 512, 0.9
+with torch.no_grad():
+    codebooks = generate_codebooks(text, tokenizer, model, top_k=top_k, images_num=images_num, top_p=top_p, bs=bs)
+    ppl_text, ppl_image = self_reranking_by_text(text, codebooks, tokenizer, model, bs=bs)
+    images = vae.decode(codebooks[ppl_text.argsort()[:9]])
+images = torchvision.utils.make_grid(images, nrow=3)
+img = torchvision.transforms.functional.to_pil_image(images)
+img
+```
+![](./pics/pipelines/example.png)
+
+
 ### Text Generation
 ```python
 generate_texts(
     tokenizer,
     model,
     template='красивый пейзаж ',
-    top_k=32, top_p=0.6, texts_num=32, bs=32, seed=42
+    top_k=32, top_p=0.8, texts_num=32, bs=32, seed=42
 )[:8]
 
-[{'text': 'красивый пейзаж с лесом и рекой. вид с воздуха на сельскую местность. пейзаж с лесом и рекой. вид на горы с беспилотника', 'ppl': 82.94},
- {'text': 'красивый пейзаж в стиле реализм, автор которой сергей владимирович дорофеев', 'ppl': 112.73},
- {'text': 'красивый пейзаж с рекой и озером - обои для рабочего стола, картинки, фото', 'ppl': 125.55},
- {'text': 'красивый пейзаж с рекой и мостом через реку в сумерках', 'ppl': 170.83},
- {'text': 'красивый пейзаж с горами в тумане - горы в тумане', 'ppl': 180.72},
- {'text': 'красивый пейзаж с лесом и лугом в сумерках', 'ppl': 185.84},
- {'text': 'красивый пейзаж с озером и лесом на заднем плане', 'ppl': 199.84},
- {'text': 'красивый пейзаж с видом на горы в таиланде', 'ppl': 219.86}]
+[{'text': 'красивый пейзаж и деревья в горах с синим небом и облаками в солнечный день. карпаты украина', 'ppl': 155.72},
+ {'text': 'красивый пейзаж с горным озером и красивым пейзажем на восходе солнца', 'ppl': 195.81},
+ {'text': 'красивый пейзаж с горными вершинами и чистым небом', 'ppl': 219.57},
+ {'text': 'красивый пейзаж с горами в тумане, покрывающими горы', 'ppl': 221.36},
+ {'text': 'красивый пейзаж и водопад в национальном парке пхутта в таиланде', 'ppl': 248.82},
+ {'text': 'красивый пейзаж с голубым небом и белым облаком', 'ppl': 260.76},
+ {'text': 'красивый пейзаж с рекой, горы и голубое небо', 'ppl': 273.1},
+ {'text': 'красивый пейзаж с зелеными деревьями и голубым небом', 'ppl': 286.22}]
 ```
-
-### Setup for Fast Image Generation
-
-```python
-text = 'рисунок кота'
-bs, images_num = 48, 48
-top_k, top_p = 512, 0.9
-with torch.no_grad():
-    codebooks = generate_codebooks(text, tokenizer, model, top_k=top_k, images_num=images_num, top_p=top_p, bs=bs)
-    ppl_text, ppl_image = self_reranking_by_text(text, codebooks, tokenizer, model, bs=bs)
-    images = vae.decode(codebooks[ppl_text.argsort()[:4]])
-images = torchvision.utils.make_grid(images, nrow=2)
-img = torchvision.transforms.functional.to_pil_image(images)
-img
-```
-![](./pics/pipelines/cat_drawing.png)
 
 ### Image Generation + Self Reranking
 ```python
 text = 'красивый пейзаж с озером и лесом на заднем плане'
-images_num = 256
+images_num, bs = 256, 32
 seed_everything(42)
 codebooks = []
 for top_k, top_p, images_num in [
-    (2048, 0.99, images_num),
-    (1024, 0.99, images_num),
-    (1024, 0.98, images_num),
+    (2048, 0.975, images_num),
+    (1536, 0.975, images_num),
+    (1024, 0.975, images_num),
 ]:
-    codebooks.append(generate_codebooks(text, tokenizer, model, top_k=top_k, images_num=images_num, top_p=top_p, bs=32))
+    codebooks.append(generate_codebooks(text, tokenizer, model, top_k=top_k, images_num=images_num, top_p=top_p, bs=bs))
 
 codebooks = torch.cat(codebooks)
 
-ppl_text, ppl_image = self_reranking_by_text(text, codebooks, tokenizer, model, bs=32)
+ppl_text, ppl_image = self_reranking_by_text(text, codebooks, tokenizer, model, bs=bs)
 with torch.no_grad():
     images = vae.decode(codebooks[ppl_text.argsort()[:16]])
 
@@ -184,7 +186,7 @@ show(pil_images, 8)
 ### Image Captioning + Self Reranking
 
 ```python
-texts = generate_captions(pil_img, tokenizer, model, vae, template='на картинке ', top_k=8, captions_num=128, bs=32, top_p=0.6, seed=42)
+texts = generate_captions(pil_img, tokenizer, model, vae, template='на картинке ', top_k=16, captions_num=128, bs=32, top_p=0.6, temperature=0.8, seed=43, limit_eos=False)
 ppl_text, ppl_image = self_reranking_by_image(texts, pil_img, tokenizer, model, vae, bs=32, seed=42)
 for idx in ppl_image.argsort()[:8]:
     print(f'-{texts[idx]}')
@@ -192,50 +194,50 @@ for idx in ppl_image.argsort()[:8]:
 
 ![](./pics/pipelines/final_lake_ship.png)
 ```python
--на картинке я хочу увидеть как выглядит дом в горах
--на картинке нарисована лодка с каяком и лесом
--на картинке нарисован дом с бассейном
--на картинке – пейзаж – горы – одна из самых красивых мест на планете
--на картинке: в норвегии
--на картинке в горах
--на картинке я хочу нарисовать дом
--на картинке изображен домик на горе
+-на картинке изображено - каяк с плавающей на нем женщиной
+-на картинке - лодка с призраками
+-на картинке корабль « », вид с воздуха
+-на картинке лодка с парусом и 3d эффектом, вид с воздуха
+-на картинке лодка с привидениями, вид сверху
+-на картинке подводная лодка «акула», вид с воздуха
+-на картинке изображено - надувная лодка с жестким дном
+-на картинке с сайта esquire, изображен маленький красный корабль
 ```
 
 ![](./pics/pipelines/captioning_dog.png)
 ```python
--на картинке изображен рыжий пес. на фото изображен рыжий пес
--на картинке собака с длинным носом и длинным носом и короткой шерстью
--на картинке собака с длинными ушами и короткой шерстью
--на картинке изображена собака с большими глазами и длинным носом
--на картинке изображен белый медведь
--на картинке собака похожа на стаффорда и бультерьера. фото, на котором
--на картинке собака похожа на бигля и на собаку
--на картинке собака с длинными ушами и длинными ушами и
+-на картинке собака с длинными ушами, вид спереди
+-на картинке собака с большими ушами и с длинными лапами, вид спереди
+-на картинке собака с большими ушами и мордой собаки, вид спереди
+-на картинке собака с белой гривой, вид спереди собака с коричневым цветом
+-на картинке собака с большими ушами и собака с большими ушами, вид спереди
+-на картинке собака с большими ушами и коричневым мехом, вид спереди
+-на картинке собака с белой гривой, вид спереди собака с белой гривой
+-на картинке собака с большими ушами и длинными ушами, вид спереди
 ```
 
 ![](./pics/pipelines/captioning_street.png)
 ```python
--на картинке изображена улица с светофором
--на картинке изображен дом на участке ижс
--на картинке изображена дорога с двумя автомобилями
--на картинке изображен вид с воздуха на жилой район, который находится на улице и в районе жилого комплекса
--на картинке изображен вид на здание с окнами и окнами
--на картинке изображена дорога с светофором
--на картинке изображен дом напротив станции
--на картинке изображен жилой дом
+-на картинке изображен жилой комплекс «арбат»
+-на картинке видно здание с окнами в центре города
+-на картинке изображен жилой дом с видом на улицу
+-на картинке виднеется здание в центре города
+-на картинке изображен вид на жилой комплекс, вид с улицы
+-на картинке видна башня банка сбербанка
+-на картинке изображен фасад здания с окнами в центре города
+-на картинке виднеется здание с балконом
 ```
 
 ![](./pics/pipelines/captioning_moto.png)
 ```python
--на картинке изображен мотоцикл иж юпитер
--на картинке изображена молодая женщина с каре на фоне деревянного дома
--на картинке изображён мотоцикл
--на картинке изображен велогонщик
--на картинке изображена мотокультиватор
--на картинке изображено здание
--на картинке изображена девушка с велосипедом
--на картинке изображен мопед
+-на картинке мотоцикл иж юпитер вариант с мотором от иж юпитер, вид сзади
+-на картинке мотоцикл с мотором и мотором с мотором от мотоцикла, вид сбоку
+-на картинке изображен мотоцикл с кузовом из фильма «бэтмен против супермена», вид спереди
+-на картинке велосипед с велосипедом в гараже, вид спереди
+-на картинке мотоцикл с мотоциклом «мотоцикл» вид сзади, вид спереди
+-на картинке велосипед с корзиной для покупок, вид сзади
+-на картинке велосипед с мотором от мотоцикла иж юпитер вариант 2 варианта, вид сбоку
+-на картинке мотоцикл с мотоциклом « », вид спереди
 ```
 
 ### Zero-Shot Image Classification using PPL
@@ -259,7 +261,7 @@ for i, bs4_url in enumerate(bs4_urls):
         model, 
         tokenizer,
         vae,
-        template = 'на фото изображена', 
+        template = '{}', 
     )
     ax[i//4, i%4].imshow(pil_img)
     ax[i//4, i%4].set_title(preds['class'])
@@ -299,8 +301,4 @@ for i, bs4_url in enumerate(bs4_urls):
 
 # Supported by
 
-[<img src="https://raw.githubusercontent.com/sberbank-ai/ru-dolph/master/pics/logo/sberai-logo.png" height="115"/>](https://github.com/sberbank-ai) \
-[<img src="https://raw.githubusercontent.com/sberbank-ai/ru-dolph/master/pics/logo/sberdevices-logo.png" height="40"/>](https://sberdevices.ru)
-
-[<img src="https://raw.githubusercontent.com/sberbank-ai/ru-dolph/master/pics/logo/sbercloud-logo.png" height="80"/>](https://sbercloud.ru/) \
 [<img src="https://raw.githubusercontent.com/sberbank-ai/ru-dolph/master/pics/logo/airi-logo.png" height="50"/>](https://airi.net)
